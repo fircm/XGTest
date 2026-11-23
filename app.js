@@ -591,8 +591,9 @@ function renderQuiz() {
     </div>
 
     <div class="quiz-foot">
-      ${q.type === 'multi' && !ans ? '<button class="btn btn-ghost" id="confirmBtn">确认提交</button>' : ''}
-      <button class="btn btn-primary" id="nextBtn">${session.idx + 1 >= total ? '查看结果' : '下一题'}</button>
+      <button class="btn btn-ghost" id="prevBtn" style="flex:1;${session.idx === 0 ? 'opacity:.4;' : ''}" ${session.idx === 0 ? 'disabled' : ''}>上一题</button>
+      ${q.type === 'multi' && !ans ? '<button class="btn btn-ghost" id="confirmBtn" style="flex:1">确认提交</button>' : ''}
+      <button class="btn btn-primary" id="nextBtn" style="flex:1.4">${session.idx + 1 >= total ? '查看结果' : '下一题'}</button>
     </div>
   `;
 
@@ -619,6 +620,7 @@ function renderQuiz() {
     if (!cur.length) { toast('请先选择选项'); return; }
     grade(cur);
   };
+  $('#prevBtn').onclick = () => { if (session.idx > 0) { session.idx--; renderQuiz(); } };
   $('#nextBtn').onclick = nextQuestion;
 }
 function renderStem(t) {
@@ -643,9 +645,12 @@ function grade(selected) {
   session.answers[q.id] = { selected: selected.slice(), correct };
   recordAnswer(q.id, correct);
   renderQuiz();
-  // 单选自动下一题
+  // 单选自动下一题（仅当用户仍停留在本题时才跳转，避免与「上一题」冲突）
   if (q.type === 'single' && settings.autoNext) {
-    setTimeout(() => { if (session) nextQuestion(); }, 1100);
+    const gradedId = q.id;
+    setTimeout(() => {
+      if (session && state.view === 'quiz' && session.ids[session.idx] === gradedId) nextQuestion();
+    }, 1100);
   }
 }
 function nextQuestion() {
