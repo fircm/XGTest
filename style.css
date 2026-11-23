@@ -1,21 +1,21 @@
 :root{
-  --primary:#2563eb;
-  --primary-dark:#1d4ed8;
-  --primary-light:#dbeafe;
+  --primary:#c62828;
+  --primary-dark:#8e1010;
+  --primary-light:#ffebee;
   --ok:#16a34a;
   --ok-bg:#dcfce7;
   --bad:#dc2626;
   --bad-bg:#fee2e2;
   --warn:#d97706;
   --warn-bg:#fef3c7;
-  --ink:#0f172a;
-  --ink-2:#334155;
-  --muted:#64748b;
-  --line:#e2e8f0;
-  --bg:#f5f7fb;
+  --ink:#1f1311;
+  --ink-2:#453634;
+  --muted:#7a6a68;
+  --line:#ead9d6;
+  --bg:#f8f6f5;
   --card:#ffffff;
   --radius:14px;
-  --shadow:0 2px 10px rgba(15,23,42,.06);
+  --shadow:0 2px 10px rgba(60,20,20,.07);
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;padding:0;height:100%;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei","Helvetica Neue",Arial,sans-serif;color:var(--ink);background:var(--bg);font-size:15px;}
@@ -49,17 +49,17 @@ body{display:flex;justify-content:center;}
 .small{font-size:12px;}
 .btn{border:none;border-radius:12px;padding:13px 18px;font-size:16px;font-weight:600;cursor:pointer;transition:transform .08s,opacity .2s;}
 .btn:active{transform:scale(.97);}
-.btn-primary{background:linear-gradient(135deg,var(--primary),var(--primary-dark));color:#fff;width:100%;box-shadow:0 4px 14px rgba(37,99,235,.35);}
+.btn-primary{background:linear-gradient(135deg,var(--primary),var(--primary-dark));color:#fff;width:100%;box-shadow:0 4px 14px rgba(198,40,40,.32);}
 .btn-ghost{background:var(--primary-light);color:var(--primary-dark);}
 .btn-block{width:100%;}
 .chip{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600;}
 .chip-single{background:var(--primary-light);color:var(--primary-dark);}
-.chip-multi{background:#ede9fe;color:#6d28d9;}
+.chip-multi{background:#fef3c7;color:#b45309;}
 .chip-ok{background:var(--ok-bg);color:var(--ok);}
 .chip-bad{background:var(--bad-bg);color:var(--bad);}
 
 /* 首页 */
-.hero{margin:12px;border-radius:var(--radius);padding:18px;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;box-shadow:0 6px 20px rgba(37,99,235,.35);}
+.hero{margin:12px;border-radius:var(--radius);padding:18px;background:linear-gradient(135deg,#c62828,#7f1d1d);color:#fff;box-shadow:0 6px 20px rgba(198,40,40,.32);}
 .hero h2{margin:0 0 4px;font-size:20px;}
 .hero p{margin:0;font-size:13px;opacity:.9;}
 .hero .streak{display:flex;align-items:center;gap:6px;margin-top:10px;font-size:13px;}
@@ -77,7 +77,7 @@ body{display:flex;justify-content:center;}
 .daily-head{padding:14px;display:flex;align-items:center;justify-content:space-between;background:linear-gradient(135deg,#fef3c7,#fde68a);}
 .daily-head .d{font-weight:700;color:#92400e;}
 .progress-track{height:8px;background:#e2e8f0;border-radius:999px;overflow:hidden;margin:10px 14px;}
-.progress-fill{height:100%;background:linear-gradient(90deg,var(--primary),#7c3aed);border-radius:999px;transition:width .4s;}
+.progress-fill{height:100%;background:linear-gradient(90deg,var(--primary),#e53935);border-radius:999px;transition:width .4s;}
 
 /* 答题页 */
 .quiz-top{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;font-size:13px;color:var(--muted);}
@@ -113,7 +113,7 @@ body{display:flex;justify-content:center;}
 .multi-hint{font-size:12px;color:var(--muted);text-align:center;margin:6px 0;}
 
 /* 结果页 */
-.result-score{margin:12px;border-radius:var(--radius);padding:24px;text-align:center;background:linear-gradient(135deg,var(--primary),#7c3aed);color:#fff;}
+.result-score{margin:12px;border-radius:var(--radius);padding:24px;text-align:center;background:linear-gradient(135deg,var(--primary),var(--primary-dark));color:#fff;}
 .result-score .big{font-size:44px;font-weight:800;line-height:1;}
 .result-score .sub{font-size:13px;opacity:.9;margin-top:6px;}
 .result-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:0 12px;}
@@ -156,7 +156,7 @@ body{display:flex;justify-content:center;}
 .bar-row{display:flex;align-items:center;gap:8px;margin:9px 0;font-size:12px;}
 .bar-row .bn{flex:0 0 130px;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .bar-row .btrack{flex:1;height:16px;background:#f1f5f9;border-radius:4px;overflow:hidden;}
-.bar-row .bfill{height:100%;background:linear-gradient(90deg,var(--primary),#7c3aed);border-radius:4px;}
+.bar-row .bfill{height:100%;background:linear-gradient(90deg,var(--primary),#e53935);border-radius:4px;}
 .bar-row .bv{flex:0 0 42px;text-align:right;color:var(--muted);}
 
 /* 我的 */
@@ -190,7 +190,7 @@ body{display:flex;justify-content:center;}
 mark{background:#fde68a;color:#92400e;border-radius:3px;padding:0 1px;}
 
 /* 模拟考试入口 */
-.exam-entry{margin:12px;background:linear-gradient(135deg,#0f766e,#0d9488);border-radius:var(--radius);padding:16px;display:flex;align-items:center;justify-content:space-between;color:#fff;box-shadow:0 6px 18px rgba(13,148,136,.3);cursor:pointer;}
+.exam-entry{margin:12px;background:linear-gradient(135deg,#9b1c1c,#5f0f0f);border-radius:var(--radius);padding:16px;display:flex;align-items:center;justify-content:space-between;color:#fff;box-shadow:0 6px 18px rgba(120,20,20,.32);cursor:pointer;}
 .exam-entry:active{transform:scale(.98);}
 .exam-entry .ee-t{font-size:16px;font-weight:700;}
 .exam-entry .ee-d{font-size:12px;opacity:.85;margin-top:4px;}

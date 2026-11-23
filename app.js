@@ -399,10 +399,10 @@ function renderStats() {
       const h = history[ds];
       const c = h ? h.correct : 0;
       let color = '#f1f5f9';
-      if (c > 0 && c <= 5) color = '#bfdbfe';
-      else if (c <= 15) color = '#60a5fa';
-      else if (c <= 30) color = '#2563eb';
-      else if (c > 30) color = '#1e3a8a';
+      if (c > 0 && c <= 5) color = '#ffcdd2';
+      else if (c <= 15) color = '#ef9a9a';
+      else if (c <= 30) color = '#e53935';
+      else if (c > 30) color = '#8e1010';
       const isFuture = date > today;
       cells.push(`<div class="hm-cell" title="${ds}: ${c}题" style="background:${isFuture ? '#f8fafc' : color}"></div>`);
     }
@@ -443,10 +443,10 @@ function renderStats() {
       <div style="display:flex;gap:3px">${cols.join('')}</div>
       <div class="hm-labels"><span>${fmtDate(todayStr(start))}</span><span>越少</span>
         <span><span class="legend-dot" style="background:#f1f5f9"></span>
-        <span class="legend-dot" style="background:#bfdbfe"></span>
-        <span class="legend-dot" style="background:#60a5fa"></span>
-        <span class="legend-dot" style="background:#2563eb"></span>
-        <span class="legend-dot" style="background:#1e3a8a"></span> 越多</span><span>${fmtDate(todayStr())}</span></div>
+        <span class="legend-dot" style="background:#ffcdd2"></span>
+        <span class="legend-dot" style="background:#ef9a9a"></span>
+        <span class="legend-dot" style="background:#e53935"></span>
+        <span class="legend-dot" style="background:#8e1010"></span> 越多</span><span>${fmtDate(todayStr())}</span></div>
     </div>
 
     <div class="section-title">各章节正确率</div>
@@ -956,7 +956,7 @@ function renderExamResult() {
     </div>
     <div class="result-stats">
       <div class="rs"><div class="n text-ok">${session.examSingle.c}/${session.examSingle.t}</div><div class="small muted">单选</div></div>
-      <div class="rs"><div class="n" style="color:#6d28d9">${session.examMulti.c}/${session.examMulti.t}</div><div class="small muted">多选</div></div>
+      <div class="rs"><div class="n" style="color:#b45309">${session.examMulti.c}/${session.examMulti.t}</div><div class="small muted">多选</div></div>
       <div class="rs"><div class="n text-bad">${wrong.length}</div><div class="small muted">错题</div></div>
     </div>
     <div class="section-title">答题详情（点击查看解析）</div>
