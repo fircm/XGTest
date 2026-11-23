@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#1d4ed8" />
+  <title>习概题库 · 每日刷题</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- 顶部栏 -->
+    <header id="topbar">
+      <div class="tb-left">
+        <button id="backBtn" class="icon-btn" hidden aria-label="返回">‹</button>
+      </div>
+      <div class="tb-title" id="topTitle">习概题库</div>
+      <div class="tb-right">
+        <button id="searchBtn" class="icon-btn" aria-label="搜索题目">🔍</button>
+      </div>
+    </header>
+
+    <!-- 主视图区 -->
+    <main id="view"></main>
+
+    <!-- 底部导航 -->
+    <nav id="tabbar">
+      <div class="tab active" data-tab="home"><span class="ti">🏠</span><span>首页</span></div>
+      <div class="tab" data-tab="practice"><span class="ti">📚</span><span>练习</span></div>
+      <div class="tab" data-tab="stats"><span class="ti">📊</span><span>统计</span></div>
+      <div class="tab" data-tab="me"><span class="ti">👤</span><span>我的</span></div>
+    </nav>
+  </div>
+
+  <!-- 全局提示 -->
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
