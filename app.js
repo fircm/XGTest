@@ -86,7 +86,7 @@ function nextInterval(cur) {
   return i < 0 ? INTERVALS[0] : INTERVALS[Math.min(i + 1, INTERVALS.length - 1)];
 }
 
-function recordAnswer(qid, correct) {
+function recordAnswer(qid, correct, mode) {
   const p = getP(qid);
   p.lastAt = Date.now();
   p.lastResult = correct;
@@ -101,21 +101,22 @@ function recordAnswer(qid, correct) {
     p.wrongActive = true;
   }
   saveProgress();
-  // 当日历史
+  // 当日历史（总答题统计，含所有模式）
   const day = todayStr();
   const h = history[day] || (history[day] = { total: 0, correct: 0, wrong: 0 });
   h.total++;
   if (correct) h.correct++; else h.wrong++;
-  // 当日去重题目：重复刷同一题只计 1 题
-  if (!h.qids) h.qids = [];
-  if (!h.qids.includes(qid)) h.qids.push(qid);
+  // 每日刷题单独计数：只统计「每日刷题」模式，并按题目去重
+  if (mode === 'daily') {
+    if (!h.dailyQids) h.dailyQids = [];
+    if (!h.dailyQids.includes(qid)) h.dailyQids.push(qid);
+  }
   save(K.history, history);
 }
-// 今日已刷题数（按题目去重）
-function todayUnique() {
+// 今日「每日刷题」已刷题数（去重，不计其他练习模式）
+function todayDailyCount() {
   const h = history[todayStr()];
-  if (!h) return 0;
-  return h.qids ? h.qids.length : h.total;
+  return h && h.dailyQids ? h.dailyQids.length : 0;
 }
 
 /* ============== 统计计算 ============== */
@@ -232,8 +233,7 @@ function renderHome() {
   showTabbar(true);
   const o = overallStats();
   const today = todayStr();
-  const h = history[today] || { total: 0, correct: 0, wrong: 0 };
-  const doneToday = todayUnique();
+  const doneToday = todayDailyCount();
   const goal = settings.dailyGoal;
   const pct = Math.min(100, Math.round(doneToday / goal * 100));
   const streak = streakDays();
@@ -394,30 +394,10 @@ function renderStats() {
   }
   const maxTotal = Math.max(1, ...days.map(d => d.total));
 
-  // 日历热力图：最近 16 周
-  const today = new Date();
-  const weekday = (today.getDay() + 6) % 7; // 周一为0
-  const end = dateOffset(-weekday); // 本周一
-  const WEEKS = 16;
-  const start = dateOffset(-(WEEKS - 1) * 7, end);
-  const cols = [];
-  for (let w = 0; w < WEEKS; w++) {
-    const cells = [];
-    for (let d = 0; d < 7; d++) {
-      const date = dateOffset(w * 7 + d, start);
-      const ds = todayStr(date);
-      const h = history[ds];
-      const c = h ? h.correct : 0;
-      let color = '#f1f5f9';
-      if (c > 0 && c <= 5) color = '#ffcdd2';
-      else if (c <= 15) color = '#ef9a9a';
-      else if (c <= 30) color = '#e53935';
-      else if (c > 30) color = '#8e1010';
-      const isFuture = date > today;
-      cells.push(`<div class="hm-cell" title="${ds}: ${c}题" style="background:${isFuture ? '#f8fafc' : color}"></div>`);
-    }
-    cols.push(`<div style="display:flex;flex-direction:column;gap:3px">${cells.join('')}</div>`);
-  }
+  // 历次模拟考试
+  const examList = exams.slice().reverse();
+  const avg = exams.length ? Math.round(exams.reduce((s, e) => s + e.score, 0) / exams.length) : 0;
+  const best = exams.length ? Math.max(...exams.map(e => e.score)) : 0;
 
   $('#view').innerHTML = `
     <div class="overall">
@@ -448,16 +428,20 @@ function renderStats() {
         </div>`).join('')}
     </div>
 
-    <div class="section-title">打卡热力图（近 16 周）</div>
-    <div class="heatmap">
-      <div style="display:flex;gap:3px">${cols.join('')}</div>
-      <div class="hm-labels"><span>${fmtDate(todayStr(start))}</span><span>越少</span>
-        <span><span class="legend-dot" style="background:#f1f5f9"></span>
-        <span class="legend-dot" style="background:#ffcdd2"></span>
-        <span class="legend-dot" style="background:#ef9a9a"></span>
-        <span class="legend-dot" style="background:#e53935"></span>
-        <span class="legend-dot" style="background:#8e1010"></span> 越多</span><span>${fmtDate(todayStr())}</span></div>
-    </div>
+    <div class="section-title">历次模拟考试</div>
+    ${exams.length ? `
+      <div class="result-stats">
+        <div class="rs"><div class="n">${exams.length}</div><div class="small muted">考试次数</div></div>
+        <div class="rs"><div class="n">${avg}</div><div class="small muted">平均分</div></div>
+        <div class="rs"><div class="n">${best}</div><div class="small muted">最高分</div></div>
+      </div>
+      <div class="ans-list">
+        ${examList.map(e => `<div class="ans-item">
+          <span class="dot" style="background:${e.pass ? 'var(--ok)' : 'var(--bad)'}"></span>
+          <span class="qtxt">${new Date(e.at).toLocaleString('zh-CN', { hour12: false })} · ${e.scope === 'all' ? '全部章节' : e.scope} · 用时 ${fmtDuration(e.usedSec)}</span>
+          <span class="ra ${e.pass ? 'text-ok' : 'text-bad'}">${e.score}分</span>
+        </div>`).join('')}
+      </div>` : `<div class="empty"><span class="ei">📝</span>还没有考试记录，去首页参加一次模拟考试吧</div>`}
 
     <div class="section-title">各章节正确率</div>
     <div class="chart">
@@ -593,8 +577,6 @@ function renderQuiz() {
       <div class="qstem">${renderStem(q.question)}</div>
     </div>
 
-    ${review ? '<div class="multi-hint" style="text-align:center">📖 回顾模式 · 仅供查看，不会修改成绩</div>' : ''}
-
     <div class="options" id="options">
       ${options.map(o => optionHTML(o, q, selected, ans)).join('')}
     </div>
@@ -664,7 +646,7 @@ function grade(selected) {
   const q = QBYID[session.ids[session.idx]];
   const correct = isCorrect(q, selected);
   session.answers[q.id] = { selected: selected.slice(), correct };
-  recordAnswer(q.id, correct);
+  recordAnswer(q.id, correct, session.mode);
   renderQuiz();
   // 单选自动下一题（仅当用户仍停留在本题时才跳转，避免与「上一题」冲突）
   if (q.type === 'single' && settings.autoNext) {
@@ -706,7 +688,7 @@ function renderResult() {
       <div class="rs"><div class="n text-bad">${total - correct}</div><div class="small muted">答错</div></div>
       <div class="rs"><div class="n">${rate}%</div><div class="small muted">正确率</div></div>
     </div>
-    <div class="section-title">答题回顾（点击查看 · 只读）</div>
+    <div class="section-title">答题回顾</div>
     <div class="ans-list">
       ${items.map((it, i) => {
         const done = !!it.a;
@@ -947,7 +929,7 @@ function submitExam(auto) {
     if (ok) correct++;
     if (q.type === 'single') { single.t++; if (ok) single.c++; } else { multi.t++; if (ok) multi.c++; }
     // 已作答的题写入学习进度（错题本/统计）
-    if (sel.length > 0) recordAnswer(id, ok);
+    if (sel.length > 0) recordAnswer(id, ok, 'exam');
     return { q, sel, ok };
   });
   const score = Math.round(correct / session.ids.length * 100);
