@@ -556,7 +556,9 @@ function renderQuiz() {
   showTabbar(false);
   const q = QBYID[session.ids[session.idx]];
   const total = session.ids.length;
-  const ans = session.answers[q.id]; // {selected, correct, done}
+  const review = !!session.review; // 分数页回看：只读，不允许再作答或改动成绩
+  const stored = session.answers[q.id]; // {selected, correct}
+  const ans = stored || (review ? { selected: [], correct: false, skipped: true } : null);
   const p = getP(q.id);
   const options = settings.shuffleOpt ? shuffle(q.options) : q.options;
   const selected = ans ? ans.selected : [];
@@ -575,13 +577,15 @@ function renderQuiz() {
       <div class="qstem">${renderStem(q.question)}</div>
     </div>
 
+    ${review ? '<div class="multi-hint" style="text-align:center">📖 回顾模式 · 仅供查看，不会修改成绩</div>' : ''}
+
     <div class="options" id="options">
       ${options.map(o => optionHTML(o, q, selected, ans)).join('')}
     </div>
     ${q.type === 'multi' && !ans ? '<div class="multi-hint">多选题，请选择所有正确选项后点击确认</div>' : ''}
 
     <div class="feedback ${ans ? (ans.correct ? 'ok show' : 'bad show') : ''}" id="feedback">
-      <div class="ft">${ans ? (ans.correct ? '✓ 回答正确' : '✗ 回答错误') : ''}</div>
+      <div class="ft">${ans ? (ans.skipped ? '○ 未作答' : ans.correct ? '✓ 回答正确' : '✗ 回答错误') : ''}</div>
       <div class="fans">
         ${ans ? `<div>正确答案：<b>${q.answer}</b>　你的答案：<b>${selected.join('') || '未作答'}</b></div>
           <div style="margin-top:6px;color:var(--ink-2)">${q.answerList.map(l => {
@@ -593,7 +597,7 @@ function renderQuiz() {
     <div class="quiz-foot">
       <button class="btn btn-ghost" id="prevBtn" style="flex:1;${session.idx === 0 ? 'opacity:.4;' : ''}" ${session.idx === 0 ? 'disabled' : ''}>上一题</button>
       ${q.type === 'multi' && !ans ? '<button class="btn btn-ghost" id="confirmBtn" style="flex:1">确认提交</button>' : ''}
-      <button class="btn btn-primary" id="nextBtn" style="flex:1.4">${session.idx + 1 >= total ? '查看结果' : '下一题'}</button>
+      <button class="btn btn-primary" id="nextBtn" style="flex:1.4">${session.idx + 1 >= total ? (review ? '返回结果' : '查看结果') : '下一题'}</button>
     </div>
   `;
 
@@ -640,6 +644,7 @@ function renderMultiSelection(cur) {
   $$('#options .option').forEach(el => el.classList.toggle('sel', cur.has(el.dataset.label)));
 }
 function grade(selected) {
+  if (!session || session.review) return; // 回顾模式禁止判分
   const q = QBYID[session.ids[session.idx]];
   const correct = isCorrect(q, selected);
   session.answers[q.id] = { selected: selected.slice(), correct };
@@ -685,7 +690,7 @@ function renderResult() {
       <div class="rs"><div class="n text-bad">${total - correct}</div><div class="small muted">答错</div></div>
       <div class="rs"><div class="n">${rate}%</div><div class="small muted">正确率</div></div>
     </div>
-    <div class="section-title">答题回顾（点击查看）</div>
+    <div class="section-title">答题回顾（点击查看 · 只读）</div>
     <div class="ans-list">
       ${items.map((it, i) => {
         const done = !!it.a;
@@ -704,6 +709,7 @@ function renderResult() {
   `;
   $$('.ans-item').forEach(it => it.onclick = () => {
     session.idx = +it.dataset.i;
+    session.review = true; // 进入只读回顾，成绩已锁定
     navigate('quiz');
   });
   $('#backHome').onclick = () => { session = null; switchTab(state.tab); };
