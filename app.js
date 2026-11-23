@@ -178,13 +178,6 @@ function getDailySet(date = todayStr()) {
   }
   return dailyset[date];
 }
-// 换一批：重新随机抽取该日期的题集
-function reshuffleDailySet(date = todayStr()) {
-  const ids = QS.map(q => q.id);
-  dailyset[date] = shuffle(ids).slice(0, settings.dailyGoal);
-  save(K.dailyset, dailyset);
-  return dailyset[date];
-}
 
 /* ============== 应用状态 / 路由 ============== */
 const state = { tab: 'home', view: 'home', params: {} };
@@ -243,7 +236,6 @@ function renderHome() {
   const doneToday = todayUnique();
   const goal = settings.dailyGoal;
   const pct = Math.min(100, Math.round(doneToday / goal * 100));
-  const dailyDate = state.dailyDate || today;
   const streak = streakDays();
   const due = dueTodayCount();
 
@@ -262,20 +254,13 @@ function renderHome() {
       <div class="daily-head">
         <div>
           <div class="d">今日目标 · ${fmtDate(today)}</div>
-          <div class="small muted">完成 ${doneToday} / ${goal} 题（不重复计数）</div>
+          <div class="small muted">完成 ${doneToday} / ${goal} 题</div>
         </div>
         <div class="chip ${doneToday >= goal ? 'chip-ok' : ''}" style="background:#fff;color:#92400e">${pct}%</div>
       </div>
       <div class="progress-track"><div class="progress-fill" style="width:${pct}%"></div></div>
       <div style="padding:4px 14px 14px">
-        <button class="btn btn-primary" id="startDaily">开始每日刷题（${goal}题）${dailyDate !== today ? ' · ' + fmtDate(dailyDate) : ''}</button>
-        <div style="display:flex;gap:10px;align-items:center;justify-content:center;margin-top:10px;font-size:12px;color:var(--ink-3);flex-wrap:wrap">
-          <button id="reshuffleDaily" style="background:none;border:none;color:var(--primary);cursor:pointer;font-size:12px;padding:0">🔀 换一批题</button>
-          <span>·</span>
-          <label style="display:flex;align-items:center;gap:4px">📅 练其他日期
-            <input type="date" id="dailyDate" value="${dailyDate}" style="font:inherit;border:1px solid var(--line);border-radius:6px;padding:2px 4px;color:var(--ink-2);background:#fff;max-width:135px">
-          </label>
-        </div>
+        <button class="btn btn-primary" id="startDaily">开始每日刷题（${goal}题）</button>
       </div>
     </div>
 
@@ -305,18 +290,7 @@ function renderHome() {
   `;
   $('#searchEntry').onclick = () => navigate('search');
   $('#examEntry').onclick = () => navigate('examSetup');
-  $('#startDaily').onclick = () => startSession('daily', { date: state.dailyDate || todayStr() });
-  $('#reshuffleDaily').onclick = () => {
-    const d = state.dailyDate || todayStr();
-    reshuffleDailySet(d);
-    toast('已换一批新题，开始刷题吧');
-  };
-  $('#dailyDate').onchange = (e) => {
-    state.dailyDate = e.target.value || todayStr();
-    getDailySet(state.dailyDate); // 预生成该日期题集
-    renderHome();
-    toast('题集日期：' + fmtDate(state.dailyDate));
-  };
+  $('#startDaily').onclick = () => startSession('daily');
   $$('.mode-card').forEach(c => c.onclick = () => startSession(c.dataset.mode));
 }
 
@@ -536,7 +510,13 @@ function renderMe() {
     </div>
   `;
   $$('#goalSeg span').forEach(s => s.onclick = () => {
-    settings.dailyGoal = +s.dataset.n; saveSettings(); toast('每日题量已设为 ' + settings.dailyGoal); renderMe();
+    settings.dailyGoal = +s.dataset.n;
+    saveSettings();
+    // 立即按新题量重建今日题集（同一种子顺序，仅长度变化）
+    delete dailyset[todayStr()];
+    getDailySet();
+    toast('每日题量已设为 ' + settings.dailyGoal + '，今日题集已更新');
+    renderMe();
   });
   $('#autoNext').onclick = () => { settings.autoNext = !settings.autoNext; saveSettings(); renderMe(); };
   $('#shuffleOpt').onclick = () => { settings.shuffleOpt = !settings.shuffleOpt; saveSettings(); renderMe(); };
@@ -561,7 +541,7 @@ function exportData() {
 /* ============== 答题会话 ============== */
 function buildIds(mode, params = {}) {
   let ids = [];
-  if (mode === 'daily') ids = getDailySet(params.date || todayStr());
+  if (mode === 'daily') ids = getDailySet();
   else if (mode === 'order') ids = QS.map(q => q.id);
   else if (mode === 'random') ids = shuffle(QS.map(q => q.id)).slice(0, 50);
   else if (mode === 'chapter') ids = QS.filter(q => q.chapter === params.chapter).map(q => q.id);
@@ -583,7 +563,7 @@ function startSession(mode, params = {}) {
   const ids = buildIds(mode, params);
   if (!ids.length) { toast('暂无题目可练习'); return; }
   const titles = { daily: '每日刷题', random: '随机刷题', order: '顺序练习', chapter: '章节练习', wrong: '错题重练', fav: '收藏练习', review: '复习巩固' };
-  session = { ids, idx: 0, answers: {}, mode, title: titles[mode] + (params.chapter ? ' · ' + params.chapter : '') + (mode === 'daily' && params.date && params.date !== todayStr() ? ' · ' + fmtDate(params.date) : '') };
+  session = { ids, idx: 0, answers: {}, mode, title: titles[mode] + (params.chapter ? ' · ' + params.chapter : '') };
   navigate('quiz');
 }
 
