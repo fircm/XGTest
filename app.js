@@ -79,7 +79,7 @@ function save(key, val) { localStorage.setItem(key, JSON.stringify(val)); }
 
 let progress = load(K.progress, {});   // {id: {correct,wrong,lastAt,lastResult,fav,wrongActive,interval,mastered,dueAt}}
 let history = load(K.history, {});      // {dateStr:{total,correct,wrong,dailyQids}}
-let settings = load(K.settings, { dailyGoal: 20, autoNext: true, shuffleOpt: false });
+let settings = Object.assign({ dailyGoal: 20, autoNext: true, shuffleOpt: false }, load(K.settings, {}));
 let dailyset = load(K.dailyset, {});
 let exams = load(K.exams, []);          // 模拟考试记录
 // 旧记录兼容：补齐 pass 字段
@@ -262,6 +262,7 @@ function goBack() {
 
 /* ============== 渲染入口 ============== */
 function render() {
+  $$('.sheet-overlay').forEach(o => o.remove());
   const v = state.view;
   if (v === 'home') renderHome();
   else if (v === 'practice') renderPractice();
@@ -536,7 +537,7 @@ function renderMe() {
     </div>
     <div class="section-title">数据</div>
     <div class="setting-item" id="exportData"><div><div class="st">导出答题记录</div><div class="sd">将进度数据导出为 JSON 文件</div></div><div class="li-arr">›</div></div>
-    <div class="setting-item" id="resetData" style="color:var(--bad)"><div><div class="st" style="color:var(--bad)">清空所有进度</div><div class="sd">重置答题记录、错题本、收藏（不可恢复）</div></div><div class="li-arr">›</div></div>
+    <div class="setting-item" id="resetData" style="color:var(--bad)"><div><div class="st" style="color:var(--bad)">清空所有进度</div><div class="sd">重置答题记录、错题本、收藏与考试记录（不可恢复）</div></div><div class="li-arr">›</div></div>
     <div class="card" style="text-align:center;color:var(--muted);font-size:12px;line-height:1.8">
       习概题库 · 共 ${TOTAL} 题 / ${CHAPTERS.length} 章<br/>
       数据保存在本机浏览器，关闭页面不丢失
@@ -555,14 +556,14 @@ function renderMe() {
   $('#exportData').onclick = exportData;
   $('#resetData').onclick = () => {
     if (confirm('确定要清空所有答题进度吗？此操作不可恢复！')) {
-      localStorage.removeItem(K.progress); localStorage.removeItem(K.history); localStorage.removeItem(K.dailyset);
-      progress = {}; history = {}; dailyset = {};
+      localStorage.removeItem(K.progress); localStorage.removeItem(K.history); localStorage.removeItem(K.dailyset); localStorage.removeItem(K.exams);
+      progress = {}; history = {}; dailyset = {}; exams = [];
       toast('已清空进度'); renderMe();
     }
   };
 }
 function exportData() {
-  const blob = new Blob([JSON.stringify({ progress, history, settings, dailyset }, null, 2)], { type: 'application/json' });
+  const blob = new Blob([JSON.stringify({ progress, history, settings, dailyset, exams }, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = `习概题库进度_${todayStr()}.json`;
@@ -704,7 +705,7 @@ function grade(selected) {
   session.answers[q.id] = { selected: selected.slice(), correct };
   recordAnswer(q.id, correct, session.mode);
   renderQuiz();
-  if (q.type === 'single' && settings.autoNext) {
+  if (q.type === 'single' && correct && settings.autoNext) {
     const gradedId = q.id;
     setTimeout(() => {
       if (session && state.view === 'quiz' && session.ids[session.idx] === gradedId) nextQuestion();
@@ -842,6 +843,7 @@ function startExam(cfg) {
     durationSec: cfg.minutes * 60,
     startAt: Date.now(),
     scope: cfg.scope,
+    cfg: { count: cfg.count, minutes: cfg.minutes, scope: cfg.scope },
   };
   navigate('exam');
 }
@@ -900,7 +902,8 @@ function renderExam() {
   };
   $$('.option').forEach(el => el.onclick = () => {
     const label = el.dataset.label;
-    const cur = new Set(selected);
+    // 从 DOM 读取当前已选，避免闭包里的 selected 过期（多选题会丢失前一次选择）
+    const cur = new Set($$('#options .option.sel').map(x => x.dataset.label));
     if (q.type === 'single') { cur.clear(); cur.add(label); }
     else { if (cur.has(label)) cur.delete(label); else cur.add(label); }
     session.answers[q.id] = { selected: [...cur] };
@@ -929,6 +932,7 @@ function renderExam() {
 }
 
 function openAnswerSheet() {
+  if (!session || session.examScore !== undefined) return;
   const total = session.ids.length;
   const overlay = document.createElement('div');
   overlay.className = 'sheet-overlay';
@@ -971,7 +975,9 @@ function confirmSubmitExam() {
 }
 
 function submitExam(auto) {
+  if (!session || session.examScore !== undefined) return; // 防止重复交卷写入多条记录
   clearExamTimer();
+  $$('.sheet-overlay').forEach(o => o.remove());
   const usedSec = Math.min(session.durationSec, Math.floor((Date.now() - session.startAt) / 1000));
   let correct = 0, single = { t: 0, c: 0 }, multi = { t: 0, c: 0 };
   const items = session.ids.map(id => {
@@ -1034,7 +1040,7 @@ function renderExamResult() {
     </div>
   `;
   $$('.ans-item').forEach(it => it.onclick = () => navigate('detail', { id: +it.dataset.id, from: 'exam' }));
-  $('#againBtn').onclick = () => navigate('examSetup');
+  $('#againBtn').onclick = () => navigate('examSetup', session && session.cfg ? { cfg: { ...session.cfg } } : {});
   $('#examHome').onclick = () => { session = null; switchTab('home'); };
 }
 
