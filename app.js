@@ -108,14 +108,22 @@ function recordAnswer(qid, correct, mode) {
   p.lastResult = correct;
   if (correct) {
     p.correct++;
-    p.interval = nextInterval(p.interval);
-    p.wrongActive = false;
-    if (p.interval >= 30) {
-      p.mastered = true;
-      p.dueAt = null;          // 已掌握，不再进入复习队列
-    } else {
+    if (mode === 'wrong') {
+      // 错题本里答对：先保留错题标记，安排次日复习，复习答对后才真正移出
+      p.interval = 1;
+      p.wrongActive = true;
       p.mastered = false;
-      p.dueAt = dateOffsetStr(p.interval); // 写入下次复习日期（修复间隔重复）
+      p.dueAt = dateOffsetStr(1);
+    } else {
+      p.interval = nextInterval(p.interval);
+      p.wrongActive = false;
+      if (p.interval >= 30) {
+        p.mastered = true;
+        p.dueAt = null;          // 已掌握，不再进入复习队列
+      } else {
+        p.mastered = false;
+        p.dueAt = dateOffsetStr(p.interval); // 写入下次复习日期（修复间隔重复）
+      }
     }
   } else {
     p.wrong++;
@@ -184,6 +192,11 @@ function isReviewDue(p, today) {
   if (!p || p.mastered) return false;
   if (p.wrongActive && !p.dueAt) return true;
   return !!p.dueAt && p.dueAt <= today;
+}
+// 复习排序：仍是错题的优先
+function reviewRank(id) {
+  const p = progress[id];
+  return p && p.wrongActive ? 0 : 1;
 }
 function dueTodayCount() {
   const today = todayStr();
@@ -364,7 +377,7 @@ function renderPractice() {
     </div>
     <div class="list">
       <div class="list-item" data-list="wrong"><div class="li-ic">❌</div>
-        <div class="li-main"><div class="li-t">错题本</div><div class="li-s">${o.wrongActive} 道错题，答对自动移除</div></div>
+        <div class="li-main"><div class="li-t">错题本</div><div class="li-s">${o.wrongActive} 道错题，答对后次日复习再移出</div></div>
         <div class="li-arr">›</div></div>
       <div class="list-item" data-list="review"><div class="li-ic">🔁</div>
         <div class="li-main"><div class="li-t">复习巩固</div><div class="li-s">${due} 道题今日到期复习（间隔重复）</div></div>
@@ -408,6 +421,7 @@ function renderList() {
   else if (kind === 'review') {
     const today = todayStr();
     ids = QS.filter(q => isReviewDue(progress[q.id], today)).map(q => q.id);
+    ids.sort((a, b) => reviewRank(a) - reviewRank(b)); // 错题优先
   }
   const list = ids.map(id => QBYID[id]);
   const empty = { wrong: '还没有错题，继续加油！', review: '今日没有需要复习的题目', fav: '还没有收藏题目，答题时点击 ☆ 收藏' };
@@ -589,6 +603,7 @@ function buildIds(mode, params = {}) {
   else if (mode === 'review') {
     const today = todayStr();
     ids = QS.filter(q => isReviewDue(progress[q.id], today)).map(q => q.id);
+    ids.sort((a, b) => reviewRank(a) - reviewRank(b)); // 错题优先
   }
   if (params.focusId) {
     ids = [params.focusId, ...ids.filter(i => i !== params.focusId)];
