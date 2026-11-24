@@ -88,7 +88,7 @@ exams.forEach(e => { if (e.pass === undefined) e.pass = e.score >= PASS_SCORE; }
 // 只读默认对象：读用 getP 不污染 progress
 const EMPTY_P = Object.freeze({
   correct: 0, wrong: 0, lastAt: 0, lastResult: null,
-  fav: false, wrongActive: false, interval: 0, mastered: false, dueAt: null,
+  fav: false, wrongActive: false, interval: 0, mastered: false, dueAt: null, priority: false,
 });
 function getP(id) { return progress[id] || EMPTY_P; }
 // 写用 ensureP：只有真正写入数据时才创建条目
@@ -109,14 +109,16 @@ function recordAnswer(qid, correct, mode) {
   if (correct) {
     p.correct++;
     if (mode === 'wrong') {
-      // 错题本里答对：先保留错题标记，安排次日复习，复习答对后才真正移出
+      // 错题本里答对：立即移出错题本，但标记为次日优先复习
       p.interval = 1;
-      p.wrongActive = true;
+      p.wrongActive = false;
+      p.priority = true;
       p.mastered = false;
       p.dueAt = dateOffsetStr(1);
     } else {
       p.interval = nextInterval(p.interval);
       p.wrongActive = false;
+      p.priority = false;
       if (p.interval >= 30) {
         p.mastered = true;
         p.dueAt = null;          // 已掌握，不再进入复习队列
@@ -193,10 +195,10 @@ function isReviewDue(p, today) {
   if (p.wrongActive && !p.dueAt) return true;
   return !!p.dueAt && p.dueAt <= today;
 }
-// 复习排序：仍是错题的优先
+// 复习排序：错题、或刚从错题本移出的优先
 function reviewRank(id) {
   const p = progress[id];
-  return p && p.wrongActive ? 0 : 1;
+  return p && (p.wrongActive || p.priority) ? 0 : 1;
 }
 function dueTodayCount() {
   const today = todayStr();
@@ -377,7 +379,7 @@ function renderPractice() {
     </div>
     <div class="list">
       <div class="list-item" data-list="wrong"><div class="li-ic">❌</div>
-        <div class="li-main"><div class="li-t">错题本</div><div class="li-s">${o.wrongActive} 道错题，答对后次日复习再移出</div></div>
+        <div class="li-main"><div class="li-t">错题本</div><div class="li-s">${o.wrongActive} 道错题，答对移出，次日优先复习</div></div>
         <div class="li-arr">›</div></div>
       <div class="list-item" data-list="review"><div class="li-ic">🔁</div>
         <div class="li-main"><div class="li-t">复习巩固</div><div class="li-s">${due} 道题今日到期复习（间隔重复）</div></div>
