@@ -236,18 +236,20 @@ function goBack() {
   const from = state.params && state.params.from;
   switch (v) {
     case 'quiz':
+      if (session && session.review) { navigate('result'); break; } // 回顾模式：退回成绩页
+      session = null; switchTab(state.tab); break;
     case 'result':
       session = null; switchTab(state.tab); break;
     case 'list':
       navigate('practice'); break;
     case 'exam':
       if (confirm('考试尚未交卷，确定退出吗？退出后本次作答不保留。')) {
-        clearExamTimer(); session = null; switchTab('home');
+        clearExamTimer(); session = null; switchTab(state.tab);
       }
       break;
     case 'examSetup':
     case 'examResult':
-      session = null; switchTab('home'); break;
+      session = null; switchTab(state.tab); break;
     case 'detail':
       if (from === 'search') navigate('search', { q: lastSearchQuery });
       else if (from === 'exam' && session && session.examItems) navigate('examResult');
@@ -752,7 +754,7 @@ function renderResult() {
         return `<div class="ans-item" data-i="${i}">
           <span class="dot" style="background:${ok ? 'var(--ok)' : done ? 'var(--bad)' : '#cbd5e1'}"></span>
           <span class="qtxt">${i + 1}. ${escapeHTML(it.q.question.length > 28 ? it.q.question.slice(0, 28) + '…' : it.q.question)}</span>
-          <span class="ra ${ok ? 'text-ok' : 'text-bad'}">${done ? (ok ? it.a.selected.join('') : it.q.answer) : '未做'}</span>
+          <span class="ra ${ok ? 'text-ok' : 'text-bad'}">${done ? it.a.selected.join('') : '未做'}</span>
         </div>`;
       }).join('')}
     </div>
@@ -766,7 +768,7 @@ function renderResult() {
     session.review = true;
     navigate('quiz');
   });
-  $('#backHome').onclick = () => { session = null; switchTab(state.tab); };
+  $('#backHome').onclick = goBack;
   $('#retryWrong').onclick = () => {
     const wrongIds = items.filter(it => it.a && !it.a.correct).map(it => it.q.id);
     if (!wrongIds.length) { toast('全部答对，无需重练 🎉'); return; }
