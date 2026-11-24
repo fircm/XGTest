@@ -179,13 +179,17 @@ function streakDays() {
   }
   return streak;
 }
+// 是否今日到期复习：未掌握且到期；旧数据（有错题标记但没有 dueAt）视为已到期
+function isReviewDue(p, today) {
+  if (!p || p.mastered) return false;
+  if (p.wrongActive && !p.dueAt) return true;
+  return !!p.dueAt && p.dueAt <= today;
+}
 function dueTodayCount() {
   const today = todayStr();
   let n = 0;
   for (const id in progress) {
-    const p = progress[id];
-    if (p.mastered) continue;
-    if (p.dueAt && p.dueAt <= today) n++;
+    if (isReviewDue(progress[id], today)) n++;
   }
   return n;
 }
@@ -403,7 +407,7 @@ function renderList() {
   else if (kind === 'fav') ids = QS.filter(q => progress[q.id] && progress[q.id].fav).map(q => q.id);
   else if (kind === 'review') {
     const today = todayStr();
-    ids = QS.filter(q => { const p = progress[q.id]; return p && !p.mastered && p.dueAt && p.dueAt <= today; }).map(q => q.id);
+    ids = QS.filter(q => isReviewDue(progress[q.id], today)).map(q => q.id);
   }
   const list = ids.map(id => QBYID[id]);
   const empty = { wrong: '还没有错题，继续加油！', review: '今日没有需要复习的题目', fav: '还没有收藏题目，答题时点击 ☆ 收藏' };
@@ -584,7 +588,7 @@ function buildIds(mode, params = {}) {
   else if (mode === 'fav') ids = QS.filter(q => progress[q.id] && progress[q.id].fav).map(q => q.id);
   else if (mode === 'review') {
     const today = todayStr();
-    ids = QS.filter(q => { const p = progress[q.id]; return p && !p.mastered && p.dueAt && p.dueAt <= today; }).map(q => q.id);
+    ids = QS.filter(q => isReviewDue(progress[q.id], today)).map(q => q.id);
   }
   if (params.focusId) {
     ids = [params.focusId, ...ids.filter(i => i !== params.focusId)];
