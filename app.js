@@ -6,12 +6,14 @@ const QBYID = {};
 QS.forEach(q => QBYID[q.id] = q);
 const CHAPTERS = [...new Set(QS.map(q => q.chapter))];
 const TOTAL = QS.length;
+const PASS_SCORE = 60; // 提前定义：数据迁移和评分判定共用
 
 /* ============== 工具函数 ============== */
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const pad = n => String(n).padStart(2, '0');
 const todayStr = (d = new Date()) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const newSeed = () => (Math.random() * 1e9) | 0;
 function dateOffset(days, from = new Date()) {
   const d = new Date(from);
   d.setDate(d.getDate() + days);
@@ -54,6 +56,13 @@ function fmtDate(str) {
   const [y, m, d] = str.split('-');
   return `${m}月${d}日`;
 }
+function fmtDuration(sec) {
+  const m = Math.floor(sec / 60), s = sec % 60;
+  return `${pad(m)}:${pad(s)}`;
+}
+function escapeHTML(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
 
 /* ============== 持久化存储 ============== */
 const K = {
@@ -68,15 +77,22 @@ function load(key, def) {
 }
 function save(key, val) { localStorage.setItem(key, JSON.stringify(val)); }
 
-let progress = load(K.progress, {});   // {id: {correct,wrong,lastAt,lastResult,fav,wrongActive,interval,mastered}}
-let history = load(K.history, {});      // {dateStr:{total,correct,wrong}}
+let progress = load(K.progress, {});   // {id: {correct,wrong,lastAt,lastResult,fav,wrongActive,interval,mastered,dueAt}}
+let history = load(K.history, {});      // {dateStr:{total,correct,wrong,dailyQids}}
 let settings = load(K.settings, { dailyGoal: 20, autoNext: true, shuffleOpt: false });
 let dailyset = load(K.dailyset, {});
-let exams = load(K.exams, []);          // 模拟考试记录 [{at,total,correct,score,usedSec,scope}]
+let exams = load(K.exams, []);          // 模拟考试记录
+// 旧记录兼容：补齐 pass 字段
+exams.forEach(e => { if (e.pass === undefined) e.pass = e.score >= PASS_SCORE; });
 
-function getP(id) {
-  return progress[id] || (progress[id] = { correct: 0, wrong: 0, lastAt: 0, lastResult: null, fav: false, wrongActive: false, interval: 0, mastered: false });
-}
+// 只读默认对象：读用 getP 不污染 progress
+const EMPTY_P = Object.freeze({
+  correct: 0, wrong: 0, lastAt: 0, lastResult: null,
+  fav: false, wrongActive: false, interval: 0, mastered: false, dueAt: null,
+});
+function getP(id) { return progress[id] || EMPTY_P; }
+// 写用 ensureP：只有真正写入数据时才创建条目
+function ensureP(id) { return progress[id] || (progress[id] = { ...EMPTY_P }); }
 function saveProgress() { save(K.progress, progress); }
 function saveSettings() { save(K.settings, settings); }
 
@@ -87,33 +103,38 @@ function nextInterval(cur) {
 }
 
 function recordAnswer(qid, correct, mode) {
-  const p = getP(qid);
+  const p = ensureP(qid);
   p.lastAt = Date.now();
   p.lastResult = correct;
   if (correct) {
     p.correct++;
     p.interval = nextInterval(p.interval);
     p.wrongActive = false;
-    if (p.interval >= 30) p.mastered = true;
+    if (p.interval >= 30) {
+      p.mastered = true;
+      p.dueAt = null;          // 已掌握，不再进入复习队列
+    } else {
+      p.mastered = false;
+      p.dueAt = dateOffsetStr(p.interval); // 写入下次复习日期（修复间隔重复）
+    }
   } else {
     p.wrong++;
     p.interval = 1;
     p.wrongActive = true;
+    p.mastered = false;
+    p.dueAt = dateOffsetStr(1);            // 答错，明天优先复习
   }
   saveProgress();
-  // 当日历史（总答题统计，含所有模式）
   const day = todayStr();
   const h = history[day] || (history[day] = { total: 0, correct: 0, wrong: 0 });
   h.total++;
   if (correct) h.correct++; else h.wrong++;
-  // 每日刷题单独计数：只统计「每日刷题」模式，并按题目去重
   if (mode === 'daily') {
     if (!h.dailyQids) h.dailyQids = [];
     if (!h.dailyQids.includes(qid)) h.dailyQids.push(qid);
   }
   save(K.history, history);
 }
-// 今日「每日刷题」已刷题数（去重，不计其他练习模式）
 function todayDailyCount() {
   const h = history[todayStr()];
   return h && h.dailyQids ? h.dailyQids.length : 0;
@@ -153,7 +174,7 @@ function streakDays() {
   for (let i = 0; i < 400; i++) {
     const d = dateOffsetStr(-i);
     if (history[d] && history[d].total > 0) streak++;
-    else if (i === 0) continue; // 今天还没做不算断
+    else if (i === 0) continue;
     else break;
   }
   return streak;
@@ -182,9 +203,9 @@ function getDailySet(date = todayStr()) {
 
 /* ============== 应用状态 / 路由 ============== */
 const state = { tab: 'home', view: 'home', params: {} };
-let session = null; // {ids, idx, answers, mode, title}
-let examTimer = null; // 模拟考试倒计时 interval
-let lastSearchQuery = ''; // 搜索页返回时保留关键词
+let session = null;
+let examTimer = null;
+let lastSearchQuery = '';
 
 function setTop(title, showBack = false) {
   $('#topTitle').textContent = title;
@@ -208,6 +229,35 @@ function switchTab(tab) {
   state.tab = tab;
   $$('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
   navigate(tab);
+}
+// 统一返回逻辑（替代 init 中的长 if/else）
+function goBack() {
+  const v = state.view;
+  const from = state.params && state.params.from;
+  switch (v) {
+    case 'quiz':
+    case 'result':
+      session = null; switchTab(state.tab); break;
+    case 'list':
+      navigate('practice'); break;
+    case 'exam':
+      if (confirm('考试尚未交卷，确定退出吗？退出后本次作答不保留。')) {
+        clearExamTimer(); session = null; switchTab('home');
+      }
+      break;
+    case 'examSetup':
+    case 'examResult':
+      session = null; switchTab('home'); break;
+    case 'detail':
+      if (from === 'search') navigate('search', { q: lastSearchQuery });
+      else if (from === 'exam' && session && session.examItems) navigate('examResult');
+      else navigate('practice');
+      break;
+    case 'search':
+      switchTab(state.tab); break;
+    default:
+      switchTab('home');
+  }
 }
 
 /* ============== 渲染入口 ============== */
@@ -325,14 +375,15 @@ function renderPractice() {
         const s = cs[c];
         const done = s.answered;
         const rate = s.total ? Math.round(done / s.total * 100) : 0;
-        return `<div class="chapter-card" data-chapter="${c}">
-          <div class="ct">${c}</div>
+        return `<div class="chapter-card" data-chapter="${escapeHTML(c)}">
+          <div class="ct">${escapeHTML(c)}</div>
           <div class="cb"><span class="cm">${done}/${s.total} 已做</span><span class="crate" style="color:${rate === 100 ? 'var(--ok)' : 'var(--primary)'}">${rate}%</span></div>
         </div>`;
       }).join('')}
     </div>
   `;
-  $$('.list-item').forEach(it => it.onclick = () => startSession(it.dataset.list));
+  // 只给带 data-list 的条目绑定 startSession，避免 examListEntry 被误绑
+  $$('.list-item[data-list]').forEach(it => it.onclick = () => startSession(it.dataset.list));
   $$('.chapter-card').forEach(c => c.onclick = () => startSession('chapter', { chapter: c.dataset.chapter }));
   $('#searchEntry').onclick = () => navigate('search');
   $('#examListEntry').onclick = () => navigate('examSetup');
@@ -364,8 +415,8 @@ function renderList() {
         return `<div class="list-item" data-id="${q.id}">
           <div class="li-ic">${q.type === 'single' ? '🔹' : '🔸'}</div>
           <div class="li-main">
-            <div class="li-t">${q.question.length > 38 ? q.question.slice(0, 38) + '…' : q.question}</div>
-            <div class="li-s">${q.chapter} · ${q.type === 'single' ? '单选' : '多选'} · 正确答案 ${q.answer}</div>
+            <div class="li-t">${escapeHTML(q.question.length > 38 ? q.question.slice(0, 38) + '…' : q.question)}</div>
+            <div class="li-s">${escapeHTML(q.chapter)} · ${q.type === 'single' ? '单选' : '多选'} · 正确答案 ${q.answer}</div>
           </div>
           <div class="li-arr">›</div>
         </div>`;
@@ -385,7 +436,6 @@ function renderStats() {
   showTabbar(true);
   const o = overallStats();
   const cs = chapterStats();
-  // 近 7 天趋势
   const days = [];
   for (let i = 6; i >= 0; i--) {
     const d = dateOffsetStr(-i);
@@ -394,7 +444,6 @@ function renderStats() {
   }
   const maxTotal = Math.max(1, ...days.map(d => d.total));
 
-  // 历次模拟考试
   const examList = exams.slice().reverse();
   const avg = exams.length ? Math.round(exams.reduce((s, e) => s + e.score, 0) / exams.length) : 0;
   const best = exams.length ? Math.max(...exams.map(e => e.score)) : 0;
@@ -438,7 +487,7 @@ function renderStats() {
       <div class="ans-list">
         ${examList.map(e => `<div class="ans-item">
           <span class="dot" style="background:${e.pass ? 'var(--ok)' : 'var(--bad)'}"></span>
-          <span class="qtxt">${new Date(e.at).toLocaleString('zh-CN', { hour12: false })} · ${e.scope === 'all' ? '全部章节' : e.scope} · 用时 ${fmtDuration(e.usedSec)}</span>
+          <span class="qtxt">${new Date(e.at).toLocaleString('zh-CN', { hour12: false })} · ${e.scope === 'all' ? '全部章节' : escapeHTML(e.scope)} · 用时 ${fmtDuration(e.usedSec)}</span>
           <span class="ra ${e.pass ? 'text-ok' : 'text-bad'}">${e.score}分</span>
         </div>`).join('')}
       </div>` : `<div class="empty"><span class="ei">📝</span>还没有考试记录，去首页参加一次模拟考试吧</div>`}
@@ -449,7 +498,7 @@ function renderStats() {
         const s = cs[c];
         const rate = (s.correct + s.wrong) ? Math.round(s.correct / (s.correct + s.wrong) * 100) : 0;
         return `<div class="bar-row">
-          <div class="bn" title="${c}">${c}</div>
+          <div class="bn" title="${escapeHTML(c)}">${escapeHTML(c)}</div>
           <div class="btrack"><div class="bfill" style="width:${rate}%"></div></div>
           <div class="bv">${rate}%</div>
         </div>`;
@@ -496,7 +545,6 @@ function renderMe() {
   $$('#goalSeg span').forEach(s => s.onclick = () => {
     settings.dailyGoal = +s.dataset.n;
     saveSettings();
-    // 立即按新题量重建今日题集（同一种子顺序，仅长度变化）
     delete dailyset[todayStr()];
     getDailySet();
     toast('每日题量已设为 ' + settings.dailyGoal + '，今日题集已更新');
@@ -527,16 +575,13 @@ function buildIds(mode, params = {}) {
   let ids = [];
   if (mode === 'daily') ids = getDailySet();
   else if (mode === 'order') ids = QS.map(q => q.id);
-  else if (mode === 'random') ids = shuffle(QS.map(q => q.id)).slice(0, 50);
+  else if (mode === 'random') ids = shuffle(QS.map(q => q.id)).slice(0, settings.dailyGoal);
   else if (mode === 'chapter') ids = QS.filter(q => q.chapter === params.chapter).map(q => q.id);
   else if (mode === 'wrong') ids = QS.filter(q => progress[q.id] && progress[q.id].wrongActive).map(q => q.id);
   else if (mode === 'fav') ids = QS.filter(q => progress[q.id] && progress[q.id].fav).map(q => q.id);
   else if (mode === 'review') {
     const today = todayStr();
     ids = QS.filter(q => { const p = progress[q.id]; return p && !p.mastered && p.dueAt && p.dueAt <= today; }).map(q => q.id);
-  }
-  if (mode === 'chapter' || mode === 'random' || mode === 'order') {
-    // 偏置：优先未掌握/未答的题（顺序模式除外）
   }
   if (params.focusId) {
     ids = [params.focusId, ...ids.filter(i => i !== params.focusId)];
@@ -547,8 +592,16 @@ function startSession(mode, params = {}) {
   const ids = buildIds(mode, params);
   if (!ids.length) { toast('暂无题目可练习'); return; }
   const titles = { daily: '每日刷题', random: '随机刷题', order: '顺序练习', chapter: '章节练习', wrong: '错题重练', fav: '收藏练习', review: '复习巩固' };
-  session = { ids, idx: 0, answers: {}, mode, title: titles[mode] + (params.chapter ? ' · ' + params.chapter : '') };
+  session = { ids, idx: 0, answers: {}, mode, seed: newSeed(), title: titles[mode] + (params.chapter ? ' · ' + params.chapter : '') };
   navigate('quiz');
+}
+
+// 选项乱序：同一会话内题目选项顺序固定（修复判分后重排）
+function orderedOptions(q) {
+  if (!settings.shuffleOpt) return q.options;
+  const seed = session && session.seed ? session.seed : 0;
+  const rng = mulberry32(hashStr(q.id + '|' + seed));
+  return shuffle(q.options, rng);
 }
 
 function renderQuiz() {
@@ -556,18 +609,18 @@ function renderQuiz() {
   showTabbar(false);
   const q = QBYID[session.ids[session.idx]];
   const total = session.ids.length;
-  const review = !!session.review; // 分数页回看：只读，不允许再作答或改动成绩
-  const stored = session.answers[q.id]; // {selected, correct}
+  const review = !!session.review;
+  const stored = session.answers[q.id];
   const ans = stored || (review ? { selected: [], correct: false, skipped: true } : null);
-  const p = getP(q.id);
-  const options = settings.shuffleOpt ? shuffle(q.options) : q.options;
+  const p = getP(q.id); // 只读
+  const options = orderedOptions(q);
   const selected = ans ? ans.selected : [];
 
   $('#view').innerHTML = `
     <div class="quiz-top">
       <div><span class="qno">${session.idx + 1}/${total}</span>
         <span class="chip ${q.type === 'single' ? 'chip-single' : 'chip-multi'}">${q.type === 'single' ? '单选题' : '多选题'}</span>
-        <span class="small muted">${q.chapter}</span>
+        <span class="small muted">${escapeHTML(q.chapter)}</span>
       </div>
       <button class="fav-btn" id="favBtn" aria-label="收藏">${p.fav ? '⭐' : '☆'}</button>
     </div>
@@ -587,7 +640,7 @@ function renderQuiz() {
       <div class="fans">
         ${ans ? `<div>正确答案：<b>${q.answer}</b>　你的答案：<b>${selected.join('') || '未作答'}</b></div>
           <div style="margin-top:6px;color:var(--ink-2)">${q.answerList.map(l => {
-            const op = q.options.find(x => x.label === l); return op ? `${l}. ${op.text}` : '';
+            const op = q.options.find(x => x.label === l); return op ? `${l}. ${escapeHTML(op.text)}` : '';
           }).join('；')}</div>` : ''}
       </div>
     </div>
@@ -599,17 +652,20 @@ function renderQuiz() {
     </div>
   `;
 
-  // 事件
-  $('#favBtn').onclick = () => { p.fav = !p.fav; saveProgress(); $('#favBtn').textContent = p.fav ? '⭐' : '☆'; toast(p.fav ? '已收藏' : '已取消收藏'); };
+  $('#favBtn').onclick = () => {
+    const pp = ensureP(q.id);
+    pp.fav = !pp.fav; saveProgress();
+    $('#favBtn').textContent = pp.fav ? '⭐' : '☆';
+    toast(pp.fav ? '已收藏' : '已取消收藏');
+  };
 
   $$('.option').forEach(el => {
     el.onclick = () => {
-      if (ans) return; // 已作答不可改
+      if (ans) return;
       const label = el.dataset.label;
       if (q.type === 'single') {
         grade([label]);
       } else {
-        // 多选切换
         const cur = new Set($$('#options .option.sel').map(x => x.dataset.label));
         if (cur.has(label)) cur.delete(label); else cur.add(label);
         renderMultiSelection(cur);
@@ -626,7 +682,7 @@ function renderQuiz() {
   $('#nextBtn').onclick = nextQuestion;
 }
 function renderStem(t) {
-  return t.replace(/_{2,}/g, '<span class="blank">＿＿</span>');
+  return escapeHTML(t).replace(/_{2,}/g, '<span class="blank">＿＿</span>');
 }
 function optionHTML(o, q, selected, ans) {
   let cls = 'option';
@@ -636,19 +692,18 @@ function optionHTML(o, q, selected, ans) {
     else if (selected.includes(o.label) && ans.correct) cls += ' ok';
   } else if (selected.includes(o.label)) cls += ' sel';
   return `<div class="${cls}" data-label="${o.label}">
-    <div class="olabel">${o.label}</div><div class="otext">${o.text}</div></div>`;
+    <div class="olabel">${o.label}</div><div class="otext">${escapeHTML(o.text)}</div></div>`;
 }
 function renderMultiSelection(cur) {
   $$('#options .option').forEach(el => el.classList.toggle('sel', cur.has(el.dataset.label)));
 }
 function grade(selected) {
-  if (!session || session.review) return; // 回顾模式禁止判分
+  if (!session || session.review) return;
   const q = QBYID[session.ids[session.idx]];
   const correct = isCorrect(q, selected);
   session.answers[q.id] = { selected: selected.slice(), correct };
   recordAnswer(q.id, correct, session.mode);
   renderQuiz();
-  // 单选自动下一题（仅当用户仍停留在本题时才跳转，避免与「上一题」冲突）
   if (q.type === 'single' && settings.autoNext) {
     const gradedId = q.id;
     setTimeout(() => {
@@ -695,7 +750,7 @@ function renderResult() {
         const ok = done && it.a.correct;
         return `<div class="ans-item" data-i="${i}">
           <span class="dot" style="background:${ok ? 'var(--ok)' : done ? 'var(--bad)' : '#cbd5e1'}"></span>
-          <span class="qtxt">${i + 1}. ${it.q.question.length > 28 ? it.q.question.slice(0, 28) + '…' : it.q.question}</span>
+          <span class="qtxt">${i + 1}. ${escapeHTML(it.q.question.length > 28 ? it.q.question.slice(0, 28) + '…' : it.q.question)}</span>
           <span class="ra ${ok ? 'text-ok' : 'text-bad'}">${done ? (ok ? it.a.selected.join('') : it.q.answer) : '未做'}</span>
         </div>`;
       }).join('')}
@@ -707,21 +762,19 @@ function renderResult() {
   `;
   $$('.ans-item').forEach(it => it.onclick = () => {
     session.idx = +it.dataset.i;
-    session.review = true; // 进入只读回顾，成绩已锁定
+    session.review = true;
     navigate('quiz');
   });
   $('#backHome').onclick = () => { session = null; switchTab(state.tab); };
   $('#retryWrong').onclick = () => {
     const wrongIds = items.filter(it => it.a && !it.a.correct).map(it => it.q.id);
     if (!wrongIds.length) { toast('全部答对，无需重练 🎉'); return; }
-    session = { ids: wrongIds, idx: 0, answers: {}, mode: 'wrong', title: session.title + ' · 错题重练' };
+    session = { ids: wrongIds, idx: 0, answers: {}, mode: 'wrong', seed: newSeed(), title: session.title + ' · 错题重练' };
     navigate('quiz');
   };
 }
 
 /* ============== 模拟考试 ============== */
-const PASS_SCORE = 60;
-
 function renderExamSetup() {
   setTop('模拟考试', true);
   showTabbar(true);
@@ -748,7 +801,7 @@ function renderExamSetup() {
       <div><div class="st">考试范围</div><div class="sd">全部章节或指定章节</div></div>
       <select id="scopeSel" class="select">
         <option value="all" ${cfg.scope === 'all' ? 'selected' : ''}>全部章节</option>
-        ${CHAPTERS.map(c => `<option value="${c}" ${cfg.scope === c ? 'selected' : ''}>${c}</option>`).join('')}
+        ${CHAPTERS.map(c => `<option value="${escapeHTML(c)}" ${cfg.scope === c ? 'selected' : ''}>${escapeHTML(c)}</option>`).join('')}
       </select>
     </div>
     <div style="padding:16px 12px">
@@ -758,10 +811,10 @@ function renderExamSetup() {
       <div class="section-title">最近考试记录</div>
       <div class="list">
         ${recent.map(e => `<div class="list-item">
-          <div class="li-ic">${e.score >= PASS_SCORE ? '✅' : '❌'}</div>
+          <div class="li-ic">${e.pass ? '✅' : '❌'}</div>
           <div class="li-main">
             <div class="li-t">${e.score} 分 · ${e.correct}/${e.total} 题</div>
-            <div class="li-s">${new Date(e.at).toLocaleString('zh-CN', { hour12: false })} · 用时 ${fmtDuration(e.usedSec)} · ${e.scope === 'all' ? '全部章节' : e.scope}</div>
+            <div class="li-s">${new Date(e.at).toLocaleString('zh-CN', { hour12: false })} · 用时 ${fmtDuration(e.usedSec)} · ${e.scope === 'all' ? '全部章节' : escapeHTML(e.scope)}</div>
           </div>
         </div>`).join('')}
       </div>` : ''}
@@ -777,17 +830,13 @@ function renderExamSetup() {
   $('#startExam').onclick = () => { cfg.scope = sel.value; startExam(cfg); };
 }
 
-function fmtDuration(sec) {
-  const m = Math.floor(sec / 60), s = sec % 60;
-  return `${pad(m)}:${pad(s)}`;
-}
-
 function startExam(cfg) {
   let pool = cfg.scope === 'all' ? QS : QS.filter(q => q.chapter === cfg.scope);
   if (pool.length > cfg.count) pool = shuffle(pool);
   const ids = pool.slice(0, Math.min(cfg.count, pool.length)).map(q => q.id);
   session = {
     ids, idx: 0, answers: {}, mode: 'exam',
+    seed: newSeed(),
     title: '模拟考试',
     total: ids.length,
     durationSec: cfg.minutes * 60,
@@ -808,7 +857,7 @@ function renderExam() {
   const total = session.ids.length;
   const ans = session.answers[q.id];
   const selected = ans ? ans.selected : [];
-  const options = settings.shuffleOpt ? shuffle(q.options) : q.options;
+  const options = orderedOptions(q);
   const answered = examAnsweredCount();
 
   $('#view').innerHTML = `
@@ -821,7 +870,7 @@ function renderExam() {
     <div class="quiz-top">
       <div><span class="qno">${session.idx + 1}/${total}</span>
         <span class="chip ${q.type === 'single' ? 'chip-single' : 'chip-multi'}">${q.type === 'single' ? '单选题' : '多选题'}</span>
-        <span class="small muted">${q.chapter}</span>
+        <span class="small muted">${escapeHTML(q.chapter)}</span>
       </div>
       <button class="fav-btn" id="favBtn" aria-label="收藏">${getP(q.id).fav ? '⭐' : '☆'}</button>
     </div>
@@ -832,7 +881,7 @@ function renderExam() {
 
     <div class="options" id="options">
       ${options.map(o => `<div class="option ${selected.includes(o.label) ? 'sel' : ''}" data-label="${o.label}">
-        <div class="olabel">${o.label}</div><div class="otext">${o.text}</div></div>`).join('')}
+        <div class="olabel">${o.label}</div><div class="otext">${escapeHTML(o.text)}</div></div>`).join('')}
     </div>
     ${q.type === 'multi' ? '<div class="multi-hint">多选题，可选择多个选项</div>' : ''}
 
@@ -843,7 +892,12 @@ function renderExam() {
     </div>
   `;
 
-  $('#favBtn').onclick = () => { const p = getP(q.id); p.fav = !p.fav; saveProgress(); $('#favBtn').textContent = p.fav ? '⭐' : '☆'; toast(p.fav ? '已收藏' : '已取消收藏'); };
+  $('#favBtn').onclick = () => {
+    const pp = ensureP(q.id);
+    pp.fav = !pp.fav; saveProgress();
+    $('#favBtn').textContent = pp.fav ? '⭐' : '☆';
+    toast(pp.fav ? '已收藏' : '已取消收藏');
+  };
   $$('.option').forEach(el => el.onclick = () => {
     const label = el.dataset.label;
     const cur = new Set(selected);
@@ -861,7 +915,6 @@ function renderExam() {
   };
   $('#sheetBtn').onclick = openAnswerSheet;
 
-  // 倒计时
   clearExamTimer();
   const tick = () => {
     const left = Math.max(0, session.durationSec - Math.floor((Date.now() - session.startAt) / 1000));
@@ -928,7 +981,6 @@ function submitExam(auto) {
     const ok = sel.length > 0 && isCorrect(q, sel);
     if (ok) correct++;
     if (q.type === 'single') { single.t++; if (ok) single.c++; } else { multi.t++; if (ok) multi.c++; }
-    // 已作答的题写入学习进度（错题本/统计）
     if (sel.length > 0) recordAnswer(id, ok, 'exam');
     return { q, sel, ok };
   });
@@ -972,7 +1024,7 @@ function renderExamResult() {
     <div class="ans-list">
       ${items.map((it, i) => `<div class="ans-item" data-id="${it.q.id}">
         <span class="dot" style="background:${it.ok ? 'var(--ok)' : 'var(--bad)'}"></span>
-        <span class="qtxt">${i + 1}. ${it.q.question.length > 26 ? it.q.question.slice(0, 26) + '…' : it.q.question}</span>
+        <span class="qtxt">${i + 1}. ${escapeHTML(it.q.question.length > 26 ? it.q.question.slice(0, 26) + '…' : it.q.question)}</span>
         <span class="ra ${it.ok ? 'text-ok' : 'text-bad'}">${it.sel.length ? it.sel.join('') : '未答'}</span>
       </div>`).join('')}
     </div>
@@ -1003,9 +1055,6 @@ function highlight(text, kw) {
   if (idx < 0) return escapeHTML(text);
   return escapeHTML(text.slice(0, idx)) + '<mark>' + escapeHTML(text.slice(idx, idx + k.length)) + '</mark>' + escapeHTML(text.slice(idx + k.length));
 }
-function escapeHTML(s) {
-  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
 
 function renderSearch() {
   setTop('题目搜索', true);
@@ -1021,7 +1070,6 @@ function renderSearch() {
   `;
   const input = $('#searchInput');
 
-  // 只更新结果区，保留输入框焦点与输入法状态
   const updateResults = (k) => {
     const results = k.trim() ? searchQuestions(k) : [];
     $('#searchMeta').innerHTML = k.trim() ? `找到 <b>${results.length}</b> 道相关题目` : `共 ${TOTAL} 道题，输入关键词开始搜索`;
@@ -1030,7 +1078,7 @@ function renderSearch() {
         <div class="li-ic">${q.type === 'single' ? '🔹' : '🔸'}</div>
         <div class="li-main">
           <div class="li-t">${highlight(q.question, k)}</div>
-          <div class="li-s">${q.chapter} · ${q.type === 'single' ? '单选' : '多选'}</div>
+          <div class="li-s">${escapeHTML(q.chapter)} · ${q.type === 'single' ? '单选' : '多选'}</div>
         </div>
         <div class="li-arr">›</div>
       </div>`).join('') + (k.trim() && results.length === 0 ? '<div class="empty"><span class="ei">🔍</span>没有找到相关题目，换个关键词试试</div>' : '');
@@ -1054,11 +1102,11 @@ function renderDetail() {
   const from = state.params.from;
   setTop('题目详情', true);
   showTabbar(false);
-  const p = getP(q.id);
+  const p = getP(q.id); // 只读
   $('#view').innerHTML = `
     <div class="quiz-top">
       <div><span class="chip ${q.type === 'single' ? 'chip-single' : 'chip-multi'}">${q.type === 'single' ? '单选题' : '多选题'}</span>
-        <span class="small muted">${q.chapter}</span>
+        <span class="small muted">${escapeHTML(q.chapter)}</span>
       </div>
       <button class="fav-btn" id="favBtn">${p.fav ? '⭐' : '☆'}</button>
     </div>
@@ -1067,11 +1115,11 @@ function renderDetail() {
     </div>
     <div class="options">
       ${q.options.map(o => `<div class="option ${q.answerList.includes(o.label) ? 'show-correct' : ''}">
-        <div class="olabel">${o.label}</div><div class="otext">${o.text}</div></div>`).join('')}
+        <div class="olabel">${o.label}</div><div class="otext">${escapeHTML(o.text)}</div></div>`).join('')}
     </div>
     <div class="feedback ok show">
       <div class="ft">正确答案：${q.answer}</div>
-      <div class="fans">${q.answerList.map(l => { const op = q.options.find(x => x.label === l); return op ? `${l}. ${op.text}` : ''; }).join('；')}</div>
+      <div class="fans">${q.answerList.map(l => { const op = q.options.find(x => x.label === l); return op ? `${l}. ${escapeHTML(op.text)}` : ''; }).join('；')}</div>
     </div>
     <div class="card row small muted">
       <div>历史作答：答对 ${p.correct} 次 · 答错 ${p.wrong} 次</div>
@@ -1081,40 +1129,20 @@ function renderDetail() {
       <button class="btn btn-ghost btn-block" id="backFromDetail">返回</button>
     </div>
   `;
-  $('#favBtn').onclick = () => { p.fav = !p.fav; saveProgress(); $('#favBtn').textContent = p.fav ? '⭐' : '☆'; toast(p.fav ? '已收藏' : '已取消收藏'); };
-  $('#backFromDetail').onclick = () => {
-    if (from === 'search') navigate('search', { q: lastSearchQuery });
-    else if (from === 'exam' && session && session.examItems) navigate('examResult');
-    else switchTab('practice');
+  $('#favBtn').onclick = () => {
+    const pp = ensureP(q.id);
+    pp.fav = !pp.fav; saveProgress();
+    $('#favBtn').textContent = pp.fav ? '⭐' : '☆';
+    toast(pp.fav ? '已收藏' : '已取消收藏');
   };
+  $('#backFromDetail').onclick = goBack;
 }
 
 /* ============== 初始化 ============== */
 function init() {
   $$('.tab').forEach(t => t.onclick = () => switchTab(t.dataset.tab));
   $('#searchBtn').onclick = () => navigate('search');
-  $('#backBtn').onclick = () => {
-    const v = state.view;
-    if (v === 'quiz' || v === 'result') {
-      session = null; switchTab(state.tab);
-    } else if (v === 'list') {
-      navigate('practice');
-    } else if (v === 'exam') {
-      if (confirm('考试尚未交卷，确定退出吗？退出后本次作答不保留。')) {
-        clearExamTimer(); session = null; switchTab('home');
-      }
-    } else if (v === 'examSetup' || v === 'examResult') {
-      session = null; switchTab('home');
-    } else if (v === 'detail') {
-      if (state.params.from === 'search') navigate('search', { q: lastSearchQuery });
-      else if (state.params.from === 'exam' && session && session.examItems) navigate('examResult');
-      else navigate('practice');
-    } else if (v === 'search') {
-      switchTab(state.tab);
-    } else {
-      switchTab('home');
-    }
-  };
+  $('#backBtn').onclick = goBack;
   render();
 }
 document.addEventListener('DOMContentLoaded', init);
