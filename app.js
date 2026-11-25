@@ -96,10 +96,17 @@ function ensureP(id) { return progress[id] || (progress[id] = { ...EMPTY_P }); }
 function saveProgress() { save(K.progress, progress); }
 function saveSettings() { save(K.settings, settings); }
 
-const INTERVALS = [1, 2, 4, 7, 15, 30];
+const INTERVALS = [1, 2, 4, 7, 15];
+const MASTER_DAYS = 15;
 function nextInterval(cur) {
+  if (!cur || cur < 1) return INTERVALS[0];
   const i = INTERVALS.indexOf(cur);
-  return i < 0 ? INTERVALS[0] : INTERVALS[Math.min(i + 1, INTERVALS.length - 1)];
+  if (i < 0) {
+    // 兼容旧数据（如 30）：取比当前值大的最近一档
+    const nxt = INTERVALS.find(v => v > cur);
+    return nxt || MASTER_DAYS;
+  }
+  return INTERVALS[Math.min(i + 1, INTERVALS.length - 1)];
 }
 
 function recordAnswer(qid, correct, mode) {
@@ -119,7 +126,7 @@ function recordAnswer(qid, correct, mode) {
       p.interval = nextInterval(p.interval);
       p.wrongActive = false;
       p.priority = false;
-      if (p.interval >= 30) {
+      if (p.interval >= MASTER_DAYS) {
         p.mastered = true;
         p.dueAt = null;          // 已掌握，不再进入复习队列
       } else {
