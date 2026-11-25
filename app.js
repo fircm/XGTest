@@ -81,6 +81,13 @@ let progress = load(K.progress, {});   // {id: {correct,wrong,lastAt,lastResult,
 let history = load(K.history, {});      // {dateStr:{total,correct,wrong,dailyQids}}
 let settings = Object.assign({ dailyGoal: 20, autoNext: true, shuffleOpt: false }, load(K.settings, {}));
 let dailyset = load(K.dailyset, {});
+// 每日题集算法版本：升级后丢弃旧题集（不影响答题记录与统计）
+const DAILY_ALGO = 2;
+if (load('qbank_v2_dailyalgo', 0) !== DAILY_ALGO) {
+  dailyset = {};
+  save(K.dailyset, dailyset);
+  save('qbank_v2_dailyalgo', DAILY_ALGO);
+}
 let exams = load(K.exams, []);          // 模拟考试记录
 // 旧记录兼容：补齐 pass 字段
 exams.forEach(e => { if (e.pass === undefined) e.pass = e.score >= PASS_SCORE; });
@@ -228,9 +235,18 @@ function dueTodayCount() {
 /* ============== 每日题集 ============== */
 function getDailySet(date = todayStr()) {
   if (!dailyset[date]) {
-    const ids = QS.map(q => q.id);
     const rng = mulberry32(hashStr('daily-' + date));
-    dailyset[date] = shuffle(ids, rng).slice(0, settings.dailyGoal);
+    const unseen = [], seen = [];
+    QS.forEach(q => {
+      const p = progress[q.id];
+      (p && p.correct + p.wrong > 0 ? seen : unseen).push(q.id);
+    });
+    // 优先未做过的题；未做过的不足时才用已做过的题补足
+    const picked = shuffle(unseen, rng).slice(0, settings.dailyGoal);
+    if (picked.length < settings.dailyGoal) {
+      picked.push(...shuffle(seen, rng).slice(0, settings.dailyGoal - picked.length));
+    }
+    dailyset[date] = picked;
     save(K.dailyset, dailyset);
   }
   return dailyset[date];
