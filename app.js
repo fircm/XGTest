@@ -151,31 +151,40 @@ function todayDailyCount() {
 }
 
 /* ============== 统计计算 ============== */
+// 按每道题当前状态归类：掌握 / 错题 / 正确 / 未答（不依赖累计作答次数）
+function questionState(p) {
+  if (!p || p.correct + p.wrong === 0) return 'none';
+  if (p.mastered) return 'mastered';
+  if (p.wrongActive || p.lastResult === false) return 'wrong';
+  return 'correct';
+}
 function overallStats() {
   let correct = 0, wrong = 0, answered = 0, mastered = 0, fav = 0, wrongActive = 0;
   for (const id in progress) {
     const p = progress[id];
-    correct += p.correct; wrong += p.wrong;
-    if (p.correct + p.wrong > 0) answered++;
-    if (p.mastered) mastered++;
     if (p.fav) fav++;
     if (p.wrongActive) wrongActive++;
+    const st = questionState(p);
+    if (st === 'none') continue;
+    answered++;
+    if (st === 'mastered') mastered++;
+    else if (st === 'wrong') wrong++;
+    else correct++;
   }
-  const total = correct + wrong;
-  const rate = total ? Math.round(correct / total * 100) : 0;
-  return { correct, wrong, total, answered, rate, mastered, fav, wrongActive };
+  const rate = answered ? Math.round((correct + mastered) / answered * 100) : 0;
+  return { correct, wrong, total: answered, answered, rate, mastered, fav, wrongActive };
 }
 function chapterStats() {
   const map = {};
-  CHAPTERS.forEach(c => map[c] = { total: 0, correct: 0, wrong: 0, answered: 0 });
+  CHAPTERS.forEach(c => map[c] = { total: 0, correct: 0, wrong: 0, mastered: 0, answered: 0 });
   QS.forEach(q => {
     map[q.chapter].total++;
-    const p = progress[q.id];
-    if (p) {
-      map[q.chapter].correct += p.correct;
-      map[q.chapter].wrong += p.wrong;
-      if (p.correct + p.wrong > 0) map[q.chapter].answered++;
-    }
+    const st = questionState(progress[q.id]);
+    if (st === 'none') return;
+    map[q.chapter].answered++;
+    if (st === 'mastered') map[q.chapter].mastered++;
+    else if (st === 'wrong') map[q.chapter].wrong++;
+    else map[q.chapter].correct++;
   });
   return map;
 }
@@ -519,7 +528,7 @@ function renderStats() {
     <div class="chart">
       ${CHAPTERS.map(c => {
         const s = cs[c];
-        const rate = (s.correct + s.wrong) ? Math.round(s.correct / (s.correct + s.wrong) * 100) : 0;
+        const rate = s.answered ? Math.round((s.correct + s.mastered) / s.answered * 100) : 0;
         return `<div class="bar-row">
           <div class="bn" title="${escapeHTML(c)}">${escapeHTML(c)}</div>
           <div class="btrack"><div class="bfill" style="width:${rate}%"></div></div>
