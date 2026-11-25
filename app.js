@@ -484,12 +484,12 @@ function renderStats() {
     <div class="overall">
       <div class="row">
         <div>
-          <div class="rate">${o.rate}<small>%</small></div>
-          <div class="small muted">总正确率</div>
+          <div class="rate">${o.answered}<small>题</small></div>
+          <div class="small muted">累计答题</div>
         </div>
         <div style="text-align:right">
-          <div class="small muted">累计答题</div>
-          <div style="font-size:20px;font-weight:700">${o.answered}</div>
+          <div class="small muted">总正确率</div>
+          <div style="font-size:20px;font-weight:700">${o.rate}%</div>
         </div>
       </div>
       <div class="row" style="margin-top:14px">
@@ -524,15 +524,15 @@ function renderStats() {
         </div>`).join('')}
       </div>` : `<div class="empty"><span class="ei">📝</span>还没有考试记录，去首页参加一次模拟考试吧</div>`}
 
-    <div class="section-title">各章节正确率</div>
+    <div class="section-title">各章节题目完成情况</div>
     <div class="chart">
       ${CHAPTERS.map(c => {
         const s = cs[c];
-        const rate = s.answered ? Math.round((s.correct + s.mastered) / s.answered * 100) : 0;
+        const pct = s.total ? Math.round(s.answered / s.total * 100) : 0;
         return `<div class="bar-row">
           <div class="bn" title="${escapeHTML(c)}">${escapeHTML(c)}</div>
-          <div class="btrack"><div class="bfill" style="width:${rate}%"></div></div>
-          <div class="bv">${rate}%</div>
+          <div class="btrack"><div class="bfill" style="width:${pct}%"></div></div>
+          <div class="bv">${s.answered}/${s.total}</div>
         </div>`;
       }).join('')}
     </div>
