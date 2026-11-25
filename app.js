@@ -480,7 +480,7 @@ function renderStats() {
         </div>
         <div style="text-align:right">
           <div class="small muted">累计答题</div>
-          <div style="font-size:20px;font-weight:700">${o.total}</div>
+          <div style="font-size:20px;font-weight:700">${o.answered}</div>
         </div>
       </div>
       <div class="row" style="margin-top:14px">
@@ -539,7 +539,7 @@ function renderMe() {
     <div class="card row">
       <div>
         <div style="font-size:17px;font-weight:700">学习概览</div>
-        <div class="small muted">累计答题 ${o.total} · 已掌握 ${o.mastered} · 连续 ${streakDays()} 天</div>
+        <div class="small muted">累计答题 ${o.answered} · 已掌握 ${o.mastered} · 连续 ${streakDays()} 天</div>
       </div>
     </div>
     <div class="section-title">设置</div>
