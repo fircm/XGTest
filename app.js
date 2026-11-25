@@ -321,9 +321,10 @@ function renderHome() {
   showTabbar(true);
   const o = overallStats();
   const today = todayStr();
-  const doneToday = todayDailyCount();
+  const doneToday = (history[today] && history[today].total) || 0; // 与统计页「近7天答题」今日数同源
+  const dailyDone = todayDailyCount();
   const goal = settings.dailyGoal;
-  const pct = Math.min(100, Math.round(doneToday / goal * 100));
+  const pct = Math.min(100, Math.round(dailyDone / goal * 100));
   const streak = streakDays();
   const due = dueTodayCount();
 
@@ -335,16 +336,16 @@ function renderHome() {
     <div class="hero">
       <h2>每日一练，温故知新</h2>
       <p>共 ${TOTAL} 道精选题库 · ${CHAPTERS.length} 个章节</p>
-      <div class="streak">🔥 连续打卡 <b>${streak}</b> 天 · 今日已刷 <b>${doneToday}</b> 题</div>
+      <div class="streak">🔥 连续打卡 <b>${streak}</b> 天 · 今日已做 <b>${doneToday}</b> 题</div>
     </div>
 
     <div class="daily-card">
       <div class="daily-head">
         <div>
           <div class="d">今日目标 · ${fmtDate(today)}</div>
-          <div class="small muted">完成 ${doneToday} / ${goal} 题</div>
+          <div class="small muted">完成 ${dailyDone} / ${goal} 题</div>
         </div>
-        <div class="chip ${doneToday >= goal ? 'chip-ok' : ''}" style="background:#fff;color:#92400e">${pct}%</div>
+        <div class="chip ${dailyDone >= goal ? 'chip-ok' : ''}" style="background:#fff;color:#92400e">${pct}%</div>
       </div>
       <div class="progress-track"><div class="progress-fill" style="width:${pct}%"></div></div>
       <div style="padding:4px 14px 14px">
